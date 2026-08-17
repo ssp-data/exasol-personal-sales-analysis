@@ -1,0 +1,31 @@
+version: 2
+
+sources:
+  - name: exa_statistics
+    schema: EXA_STATISTICS
+    description: "Written continuously by Exasol's exasqllog service. Always on."
+    tables:
+      - name: exa_sql_last_day
+        identifier: EXA_SQL_LAST_DAY
+        description: "Every statement executed in the last 24 hours, with timings."
+
+models:
+  - name: mart_query_log
+    description: "What has been running against this database in the last day, and how long it took."
+    columns:
+      - name: command_name
+        description: "SELECT, INSERT, CREATE TABLE, COMMIT, ..."
+      - name: command_class
+        description: "DQL, DML, DDL, TRANSACTION"
+      - name: seconds
+        description: "Wall-clock duration of the statement"
+      - name: cpu_pct
+        description: "Average CPU utilisation while it ran"
+      - name: temp_ram_mb
+        description: "Peak temporary RAM the statement needed"
+      - name: rows_returned
+        description: "Rows produced or affected"
+      - name: consumer_group
+        description: "Resource Manager group the session belonged to"
+      - name: success
+        description: "Whether the statement completed without error"

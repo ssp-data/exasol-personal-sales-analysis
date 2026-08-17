@@ -9,21 +9,21 @@ models:
         description: "Grain: product_category"
         data_tests: [not_null]
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: gross_revenue
-        description: "Revenue before discount (SUM(gross_revenue))"
+        description: "Revenue before discount (SUM(f.gross_revenue))"
       - name: discount_amount
-        description: "Total discount given (SUM(discount_amount))"
+        description: "Total discount given (SUM(f.discount_amount))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: units
-        description: "Units sold (SUM(quantity))"
+        description: "Units sold (SUM(f.quantity))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
       - name: avg_discount_pct
-        description: "Average discount, in percent (ROUND(AVG(discount) * 100, 2))"
+        description: "Average discount, in percent (CAST(AVG(f.discount) * 100 AS DECIMAL(5,2)))"
       - name: avg_rating
-        description: "Average customer rating (ROUND(AVG(customer_rating), 2))"
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
   - name: mart_revenue_by_region
     description: "Revenue and service quality per region."
     columns:
@@ -31,19 +31,19 @@ models:
         description: "Grain: region"
         data_tests: [not_null]
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: units
-        description: "Units sold (SUM(quantity))"
+        description: "Units sold (SUM(f.quantity))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
       - name: avg_discount_pct
-        description: "Average discount, in percent (ROUND(AVG(discount) * 100, 2))"
+        description: "Average discount, in percent (CAST(AVG(f.discount) * 100 AS DECIMAL(5,2)))"
       - name: avg_rating
-        description: "Average customer rating (ROUND(AVG(customer_rating), 2))"
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
       - name: avg_delivery_days
-        description: "Average days to delivery (ROUND(AVG(delivery_days), 1))"
+        description: "Average days to delivery (CAST(AVG(f.delivery_days) AS DECIMAL(4,1)))"
   - name: mart_revenue_monthly
     description: "Monthly revenue trend across the whole dataset."
     columns:
@@ -51,17 +51,17 @@ models:
         description: "Grain: order_month"
         data_tests: [not_null]
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: gross_revenue
-        description: "Revenue before discount (SUM(gross_revenue))"
+        description: "Revenue before discount (SUM(f.gross_revenue))"
       - name: discount_amount
-        description: "Total discount given (SUM(discount_amount))"
+        description: "Total discount given (SUM(f.discount_amount))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: units
-        description: "Units sold (SUM(quantity))"
+        description: "Units sold (SUM(f.quantity))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
   - name: mart_category_region
     description: "Category by region cross-tab — where each category actually sells."
     columns:
@@ -71,15 +71,15 @@ models:
       - name: region
         description: "Grain: region"
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: units
-        description: "Units sold (SUM(quantity))"
+        description: "Units sold (SUM(f.quantity))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
       - name: avg_rating
-        description: "Average customer rating (ROUND(AVG(customer_rating), 2))"
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
   - name: mart_payment_method
     description: "Revenue and delivery experience per payment method."
     columns:
@@ -87,17 +87,33 @@ models:
         description: "Grain: payment_method"
         data_tests: [not_null]
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
       - name: avg_discount_pct
-        description: "Average discount, in percent (ROUND(AVG(discount) * 100, 2))"
+        description: "Average discount, in percent (CAST(AVG(f.discount) * 100 AS DECIMAL(5,2)))"
       - name: avg_rating
-        description: "Average customer rating (ROUND(AVG(customer_rating), 2))"
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
       - name: avg_delivery_days
-        description: "Average days to delivery (ROUND(AVG(delivery_days), 1))"
+        description: "Average days to delivery (CAST(AVG(f.delivery_days) AS DECIMAL(4,1)))"
+  - name: mart_segment_category
+    description: "Which customer segments carry which categories."
+    columns:
+      - name: customer_segment
+        description: "Grain: customer_segment"
+        data_tests: [not_null]
+      - name: product_category
+        description: "Grain: product_category"
+      - name: revenue
+        description: "Net revenue after discount (SUM(f.net_revenue))"
+      - name: orders
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
+      - name: avg_order_value
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
+      - name: avg_rating
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
   - name: mart_customer_value
     description: "Per-customer lifetime value and activity window."
     columns:
@@ -105,18 +121,18 @@ models:
         description: "Grain: customer_id"
         data_tests: [not_null]
       - name: revenue
-        description: "Net revenue after discount (SUM(net_revenue))"
+        description: "Net revenue after discount (SUM(f.net_revenue))"
       - name: orders
-        description: "Number of orders (COUNT(DISTINCT order_id))"
+        description: "Number of orders (COUNT(DISTINCT f.order_id))"
       - name: units
-        description: "Units sold (SUM(quantity))"
+        description: "Units sold (SUM(f.quantity))"
       - name: avg_order_value
-        description: "Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))"
+        description: "Net revenue per order (CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2)))"
       - name: avg_rating
-        description: "Average customer rating (ROUND(AVG(customer_rating), 2))"
+        description: "Average customer rating (CAST(AVG(f.customer_rating) AS DECIMAL(3,2)))"
       - name: first_order_date
-        description: "First order (MIN(order_date))"
+        description: "First order (MIN(f.order_date))"
       - name: last_order_date
-        description: "Most recent order (MAX(order_date))"
+        description: "Most recent order (MAX(f.order_date))"
       - name: active_days
-        description: "Days between first and last order (MAX(order_date) - MIN(order_date))"
+        description: "Days between first and last order (MAX(f.order_date) - MIN(f.order_date))"

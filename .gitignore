@@ -11,10 +11,9 @@ __pycache__/
 .user.yml
 .mypy_cache/
 .ruff_cache/
-
 .claude
 
-# Note: transform/models/** and serve/questions.md ARE committed even though the
-# engine generates them. They are the "declarative code" artefact — reviewable in
-# a pull request, diffable when stack.yaml changes. Never edit them by hand;
-# `make render` overwrites them.
+# Note: transform/models/marts/** IS committed even though the engine generates
+# it. It is the "declarative code" artefact — reviewable in a pull request,
+# diffable when stack.yaml changes. Never edit it by hand; `make render`
+# overwrites it.

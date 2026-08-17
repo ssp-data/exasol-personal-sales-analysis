@@ -5,13 +5,13 @@
 -- Grain: payment_method
 
 select
-    payment_method                                                    as payment_method,
-    SUM(net_revenue)                                                  as revenue,
-    COUNT(DISTINCT order_id)                                          as orders,
-    ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2)  as avg_order_value,
-    ROUND(AVG(discount) * 100, 2)                                     as avg_discount_pct,
-    ROUND(AVG(customer_rating), 2)                                    as avg_rating,
-    ROUND(AVG(delivery_days), 1)                                      as avg_delivery_days
-from {{ ref('stg_sales_orders') }}
+    f.payment_method                                                                   as payment_method,
+    SUM(f.net_revenue)                                                                 as revenue,
+    COUNT(DISTINCT f.order_id)                                                         as orders,
+    CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2))  as avg_order_value,
+    CAST(AVG(f.discount) * 100 AS DECIMAL(5,2))                                        as avg_discount_pct,
+    CAST(AVG(f.customer_rating) AS DECIMAL(3,2))                                       as avg_rating,
+    CAST(AVG(f.delivery_days) AS DECIMAL(4,1))                                         as avg_delivery_days
+from {{ ref('fct_orders') }} f
 group by 1
 order by revenue DESC

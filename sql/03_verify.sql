@@ -1,0 +1,46 @@
+-- Cheap assertions. If these look wrong, the stack is wrong.
+
+SELECT 'raw rows loaded' AS CHECK_NAME,
+       (SELECT COUNT(*) FROM RAW_SALES.SALES_ORDERS) AS ACTUAL,
+       '> 0' AS EXPECTED,
+       CASE WHEN (SELECT COUNT(*) FROM RAW_SALES.SALES_ORDERS) > 0
+            THEN 'PASS' ELSE 'FAIL' END AS STATUS
+UNION ALL
+SELECT 'fact = raw (no rows lost)',
+       (SELECT COUNT(*) FROM SALES.FCT_ORDERS) - (SELECT COUNT(*) FROM RAW_SALES.SALES_ORDERS),
+       '= 0',
+       CASE WHEN (SELECT COUNT(*) FROM SALES.FCT_ORDERS)
+                 - (SELECT COUNT(*) FROM RAW_SALES.SALES_ORDERS) = 0
+            THEN 'PASS' ELSE 'FAIL' END
+UNION ALL
+SELECT 'no orphan dimension keys',
+       (SELECT COUNT(*) FROM SALES.FCT_ORDERS f
+         LEFT JOIN SALES.DIM_CATEGORY c ON c.CATEGORY_KEY = f.CATEGORY_KEY
+         LEFT JOIN SALES.DIM_REGION   r ON r.REGION_KEY   = f.REGION_KEY
+         LEFT JOIN SALES.DIM_CUSTOMER u ON u.CUSTOMER_KEY = f.CUSTOMER_KEY
+        WHERE c.CATEGORY_KEY IS NULL OR r.REGION_KEY IS NULL OR u.CUSTOMER_KEY IS NULL),
+       '= 0',
+       CASE WHEN (SELECT COUNT(*) FROM SALES.FCT_ORDERS f
+                   LEFT JOIN SALES.DIM_CATEGORY c ON c.CATEGORY_KEY = f.CATEGORY_KEY
+                   LEFT JOIN SALES.DIM_REGION   r ON r.REGION_KEY   = f.REGION_KEY
+                   LEFT JOIN SALES.DIM_CUSTOMER u ON u.CUSTOMER_KEY = f.CUSTOMER_KEY
+                  WHERE c.CATEGORY_KEY IS NULL OR r.REGION_KEY IS NULL
+                     OR u.CUSTOMER_KEY IS NULL) = 0
+            THEN 'PASS' ELSE 'FAIL' END
+UNION ALL
+SELECT 'mart revenue = fact revenue',
+       ROUND((SELECT SUM(REVENUE) FROM SALES.MART_REVENUE_BY_CATEGORY)
+             - (SELECT SUM(NET_REVENUE) FROM SALES.FCT_ORDERS), 2),
+       '= 0',
+       CASE WHEN ROUND((SELECT SUM(REVENUE) FROM SALES.MART_REVENUE_BY_CATEGORY)
+                       - (SELECT SUM(NET_REVENUE) FROM SALES.FCT_ORDERS), 2) = 0
+            THEN 'PASS' ELSE 'FAIL' END
+ORDER BY 1;
+
+-- What Exasol built for itself while running the joins above. No CREATE INDEX
+-- anywhere in this project — the optimizer decides, creates them during query
+-- execution, and drops them again after five unused weeks.
+SELECT INDEX_SCHEMA, INDEX_TABLE, INDEX_TYPE, MEM_OBJECT_SIZE AS BYTES
+  FROM SYS.EXA_ALL_INDICES
+ WHERE INDEX_SCHEMA = 'SALES'
+ ORDER BY 2, 3;

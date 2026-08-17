@@ -5,15 +5,16 @@
 -- Grain: customer_id
 
 select
-    customer_id                                                       as customer_id,
-    SUM(net_revenue)                                                  as revenue,
-    COUNT(DISTINCT order_id)                                          as orders,
-    SUM(quantity)                                                     as units,
-    ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2)  as avg_order_value,
-    ROUND(AVG(customer_rating), 2)                                    as avg_rating,
-    MIN(order_date)                                                   as first_order_date,
-    MAX(order_date)                                                   as last_order_date,
-    MAX(order_date) - MIN(order_date)                                 as active_days
-from {{ ref('stg_sales_orders') }}
+    d_customer.customer_key                                                            as customer_id,
+    SUM(f.net_revenue)                                                                 as revenue,
+    COUNT(DISTINCT f.order_id)                                                         as orders,
+    SUM(f.quantity)                                                                    as units,
+    CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2))  as avg_order_value,
+    CAST(AVG(f.customer_rating) AS DECIMAL(3,2))                                       as avg_rating,
+    MIN(f.order_date)                                                                  as first_order_date,
+    MAX(f.order_date)                                                                  as last_order_date,
+    MAX(f.order_date) - MIN(f.order_date)                                              as active_days
+from {{ ref('fct_orders') }} f
+join {{ ref('dim_customer') }} d_customer on d_customer.customer_key = f.customer_key
 group by 1
 order by revenue DESC

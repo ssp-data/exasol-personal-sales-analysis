@@ -1,7 +1,8 @@
 # Sales analytics on Exasol Personal — a declarative data stack in one file.
 #
-#   make all     CSV on disk -> data marts you can ask questions about
-#   make ask     what to ask, and where
+#   make all      CSV on disk -> star schema -> data marts you can ask about
+#   make ask      what to ask, and where
+#   make profile  what the engine did with your query
 #
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
@@ -25,7 +26,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 	@echo
-	@echo "  Config lives in stack.yaml. Everything else is generated."
+	@echo "  Metrics and marts live in stack.yaml. Everything else is plain SQL."
 
 all: setup check render load transform grants verify ## Run the whole stack, start to finish
 	@echo
@@ -42,23 +43,26 @@ check: ## Confirm the database is up and the tools are installed
 	@$(SQL) "SELECT 1" >/dev/null 2>&1 || { echo "database not reachable — try 'exakit start'"; exit 1; }
 	@echo "database up, tools present"
 
-render: ## Compile stack.yaml into SQL and dbt models
+render: ## Compile the marts in stack.yaml into dbt models
 	@uv run --quiet python engine/render.py
 
 load: ## Create the raw table and load the CSV
-	@$(SQL) < build/01_raw_schema.sql 2>&1 | tail -1
+	@$(SQL) < sql/01_raw_schema.sql 2>&1 | tail -1
 	@mkdir -p build
 	@tr -d '\r' < "$(CSV)" > "build/source.csv"   # the file ships with CRLF line endings
 	@exapump upload -p $(PROFILE) -t $(RAW_TABLE) "build/source.csv"
 
-transform: ## Build staging + marts with dbt-exasol
+transform: ## Build staging, the star schema, and the marts with dbt-exasol
 	@$(DBT) build --project-dir transform
 
 grants: ## Give the MCP user read-only access
-	@$(SQL) < build/02_grants.sql 2>&1 | tail -1
+	@$(SQL) < sql/02_grants.sql 2>&1 | tail -1
 
-verify: ## Assert the numbers add up
-	@$(SQL) < build/03_verify.sql
+verify: ## Assert the numbers add up, and show the indexes Exasol built itself
+	@$(SQL) < sql/03_verify.sql
+
+profile: ## Profile a mart query and print what the engine actually did
+	@$(SQL) < sql/04_profile.sql
 
 ask: ## Show what to ask, and where
 	@echo
@@ -77,4 +81,4 @@ clean: ## Drop both schemas — the stack is disposable
 	@$(SQL) "DROP SCHEMA IF EXISTS RAW_SALES CASCADE" | tail -1
 	@rm -rf build transform/target transform/logs
 
-.PHONY: help all setup check render load transform grants verify ask docs clean
+.PHONY: help all setup check render load transform grants verify profile ask docs clean

@@ -5,13 +5,15 @@
 -- Grain: product_category, region
 
 select
-    product_category                                                  as product_category,
-    region                                                            as region,
-    SUM(net_revenue)                                                  as revenue,
-    COUNT(DISTINCT order_id)                                          as orders,
-    SUM(quantity)                                                     as units,
-    ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2)  as avg_order_value,
-    ROUND(AVG(customer_rating), 2)                                    as avg_rating
-from {{ ref('stg_sales_orders') }}
+    d_category.category_name                                                           as product_category,
+    d_region.region_name                                                               as region,
+    SUM(f.net_revenue)                                                                 as revenue,
+    COUNT(DISTINCT f.order_id)                                                         as orders,
+    SUM(f.quantity)                                                                    as units,
+    CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2))  as avg_order_value,
+    CAST(AVG(f.customer_rating) AS DECIMAL(3,2))                                       as avg_rating
+from {{ ref('fct_orders') }} f
+join {{ ref('dim_category') }} d_category on d_category.category_key = f.category_key
+join {{ ref('dim_region') }} d_region on d_region.region_key = f.region_key
 group by 1, 2
 order by revenue DESC

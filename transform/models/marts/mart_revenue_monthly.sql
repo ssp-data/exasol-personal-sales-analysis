@@ -5,13 +5,13 @@
 -- Grain: order_month
 
 select
-    order_month                                                       as order_month,
-    SUM(net_revenue)                                                  as revenue,
-    SUM(gross_revenue)                                                as gross_revenue,
-    SUM(discount_amount)                                              as discount_amount,
-    COUNT(DISTINCT order_id)                                          as orders,
-    SUM(quantity)                                                     as units,
-    ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2)  as avg_order_value
-from {{ ref('stg_sales_orders') }}
+    f.order_month                                                                      as order_month,
+    SUM(f.net_revenue)                                                                 as revenue,
+    SUM(f.gross_revenue)                                                               as gross_revenue,
+    SUM(f.discount_amount)                                                             as discount_amount,
+    COUNT(DISTINCT f.order_id)                                                         as orders,
+    SUM(f.quantity)                                                                    as units,
+    CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2))  as avg_order_value
+from {{ ref('fct_orders') }} f
 group by 1
 order by order_month

@@ -1,132 +1,69 @@
 # =============================================================================
-# stack.yaml — the whole data stack, declared once.
+# stack.yaml — the metrics and the marts.
 #
-# This file is the ONLY place business logic lives. Everything else in this
-# repo is either the engine (engine/render.py) that compiles this file, or
-# generated code that the engine writes. Never edit generated files — change
-# this config and re-run `make render`.
+# This is the only generated part of the stack, and deliberately so: metrics and
+# marts are the pieces that repeat, so a compiler earns its keep. Everything
+# else — the raw DDL, the staging view, the star schema — is ordinary
+# hand-written SQL under sql/ and transform/models/, because generating a file
+# you write once costs more than it saves.
 #
-#   config (this file)  ->  engine  ->  declarative code  ->  Exasol
+#   stack.yaml  ->  engine/render.py  ->  transform/models/marts/*
 # =============================================================================
 
-project:
-  name: sales-analytics
-  description: E-commerce sales performance, from a CSV on disk to queryable data marts.
-
-# -----------------------------------------------------------------------------
-# Runtime — where the SQL actually executes.
-# `dev` is the local Exasol nano container from the starter kit.
-# Swap in a cloud preset (`exasol install aws`) and only this block changes.
-# -----------------------------------------------------------------------------
 runtime:
-  profile: starter-kit          # exapump connection profile (~/.exapump/config.toml)
-  model_schema: SALES           # where staging + marts land
+  model_schema: SALES
 
 # -----------------------------------------------------------------------------
-# Source — existing data you already have lying around.
+# The star. Marts below name a dimension; the engine works out the join.
+# `model` + `key` mean "join this dimension table"; a dimension with only a
+# `column` is degenerate and lives on the fact table itself.
 # -----------------------------------------------------------------------------
-source:
-  name: sales_orders
-  description: E-Commerce Sales Analytics, 5000 orders (Kaggle, srisyra02).
-  file: data/E-Commerce Sales Analytics.csv
-  format: csv
-  schema: RAW_SALES
-  table: SALES_ORDERS
-  # Explicit types = a contract with the file. If the CSV drifts, the load
-  # fails loudly instead of silently changing the meaning of a column.
-  columns:
-    - { name: order_id,         type: "DECIMAL(18,0)", description: "Order identifier, one row per order" }
-    - { name: order_date,       type: "VARCHAR(10)",   description: "Order date as written in the file (M/D/YYYY)" }
-    - { name: customer_id,      type: "DECIMAL(18,0)", description: "Customer identifier" }
-    - { name: product_category, type: "VARCHAR(50)",   description: "Beauty, Clothing, Electronics, Home" }
-    - { name: region,           type: "VARCHAR(50)",   description: "East, North, South, West" }
-    - { name: quantity,         type: "DECIMAL(9,0)",  description: "Units ordered" }
-    - { name: unit_price,       type: "DECIMAL(12,2)", description: "List price per unit" }
-    - { name: discount,         type: "DECIMAL(6,4)",  description: "Discount as a fraction, 0.28 = 28%" }
-    - { name: payment_method,   type: "VARCHAR(50)",   description: "Card, COD, Wallet" }
-    - { name: delivery_days,    type: "DECIMAL(5,0)",  description: "Days from order to delivery" }
-    - { name: customer_rating,  type: "DECIMAL(3,1)",  description: "Customer rating, 1.0 - 5.0" }
-    - { name: revenue,          type: "DECIMAL(18,2)", description: "Net revenue as supplied by the source" }
+star:
+  fact: fct_orders
+  dimensions:
+    - { name: product_category,  model: dim_category, key: category_key, column: category_name }
+    - { name: region,            model: dim_region,   key: region_key,   column: region_name }
+    - { name: customer_id,       model: dim_customer, key: customer_key, column: customer_key }
+    - { name: customer_segment,  model: dim_customer, key: customer_key, column: customer_segment }
+    - { name: order_month,       column: order_month }
+    - { name: payment_method,    column: payment_method }
 
 # -----------------------------------------------------------------------------
-# Staging — one typed, cleaned view over the raw table.
-# Raw stays exactly as loaded; every interpretation happens here and is visible.
-# -----------------------------------------------------------------------------
-staging:
-  model: stg_sales_orders
-  materialized: view
-  description: Typed and enriched order lines. One row per order.
-  passthrough:
-    - order_id
-    - customer_id
-    - product_category
-    - region
-    - payment_method
-    - quantity
-    - unit_price
-    - discount
-    - delivery_days
-    - customer_rating
-  derived:
-    - name: order_date
-      expr: "TO_DATE(order_date, 'MM/DD/YYYY')"
-      description: "Parsed order date"
-    - name: order_month
-      expr: "DATE_TRUNC('month', TO_DATE(order_date, 'MM/DD/YYYY'))"
-      description: "First day of the order month"
-    - name: order_year
-      expr: "EXTRACT(YEAR FROM TO_DATE(order_date, 'MM/DD/YYYY'))"
-      description: "Order year"
-    - name: gross_revenue
-      expr: "ROUND(quantity * unit_price, 2)"
-      description: "Revenue before discount"
-    - name: net_revenue
-      expr: "revenue"
-      description: "Revenue after discount, as supplied by the source"
-    - name: discount_amount
-      expr: "ROUND(quantity * unit_price - revenue, 2)"
-      description: "Money given away as discount"
-    - name: is_future_order
-      expr: "CASE WHEN TO_DATE(order_date, 'MM/DD/YYYY') > CURRENT_DATE THEN TRUE ELSE FALSE END"
-      description: "This dataset is synthetic and runs to 2035 — flag rows dated in the future"
-
-# -----------------------------------------------------------------------------
-# Metrics — the semantic layer. Defined once, reused by every mart below.
-# This is what makes the AI's answers consistent: "revenue" means one thing.
+# Metrics (or semantic layer): Defined once, reused by every mart, and pushed
+# into the Exasol catalog as column comments so the MCP server hands them to the
+# agent along with the schema.
 # -----------------------------------------------------------------------------
 metrics:
   - name: revenue
-    expr: "SUM(net_revenue)"
+    expr: "SUM(f.net_revenue)"
     description: "Net revenue after discount"
   - name: gross_revenue
-    expr: "SUM(gross_revenue)"
+    expr: "SUM(f.gross_revenue)"
     description: "Revenue before discount"
   - name: discount_amount
-    expr: "SUM(discount_amount)"
+    expr: "SUM(f.discount_amount)"
     description: "Total discount given"
   - name: orders
-    expr: "COUNT(DISTINCT order_id)"
+    expr: "COUNT(DISTINCT f.order_id)"
     description: "Number of orders"
   - name: units
-    expr: "SUM(quantity)"
+    expr: "SUM(f.quantity)"
     description: "Units sold"
   - name: avg_order_value
-    expr: "ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2)"
+    expr: "CAST(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0) AS DECIMAL(18,2))"
     description: "Net revenue per order"
   - name: avg_discount_pct
-    expr: "ROUND(AVG(discount) * 100, 2)"
+    expr: "CAST(AVG(f.discount) * 100 AS DECIMAL(5,2))"
     description: "Average discount, in percent"
   - name: avg_rating
-    expr: "ROUND(AVG(customer_rating), 2)"
+    expr: "CAST(AVG(f.customer_rating) AS DECIMAL(3,2))"
     description: "Average customer rating"
   - name: avg_delivery_days
-    expr: "ROUND(AVG(delivery_days), 1)"
+    expr: "CAST(AVG(f.delivery_days) AS DECIMAL(4,1))"
     description: "Average days to delivery"
 
 # -----------------------------------------------------------------------------
-# Marts — the outcome datasets. Grain + metrics, nothing else.
-# Each one becomes a dbt model, a table in Exasol, and a row in the docs the
-# AI reads over MCP.
+# Marts — the outcome datasets. A grain and a list of metrics.
 # -----------------------------------------------------------------------------
 marts:
   - name: mart_revenue_by_category
@@ -159,28 +96,18 @@ marts:
     metrics: [revenue, orders, avg_order_value, avg_discount_pct, avg_rating, avg_delivery_days]
     order_by: "revenue DESC"
 
+  - name: mart_segment_category
+    description: Which customer segments carry which categories.
+    dimensions: [customer_segment, product_category]
+    metrics: [revenue, orders, avg_order_value, avg_rating]
+    order_by: "revenue DESC"
+
   - name: mart_customer_value
     description: Per-customer lifetime value and activity window.
     dimensions: [customer_id]
     metrics: [revenue, orders, units, avg_order_value, avg_rating]
     extra_metrics:
-      - { name: first_order_date, expr: "MIN(order_date)",                description: "First order" }
-      - { name: last_order_date,  expr: "MAX(order_date)",                description: "Most recent order" }
-      - { name: active_days,      expr: "MAX(order_date) - MIN(order_date)", description: "Days between first and last order" }
+      - { name: first_order_date, expr: "MIN(f.order_date)",                    description: "First order" }
+      - { name: last_order_date,  expr: "MAX(f.order_date)",                    description: "Most recent order" }
+      - { name: active_days,      expr: "MAX(f.order_date) - MIN(f.order_date)", description: "Days between first and last order" }
     order_by: "revenue DESC"
-
-# -----------------------------------------------------------------------------
-# Serve — no BI tool. The interface is natural language over MCP.
-# These questions are generated into serve/questions.md so they are versioned
-# and repeatable, not retyped from memory every session.
-# -----------------------------------------------------------------------------
-serve:
-  reader: mcp_readonly
-  questions:
-    - Which product category generated the most revenue, and how much of it was given away as discount?
-    - Show me the monthly revenue trend and point out any month that breaks the pattern.
-    - Which region has the best customer rating, and does slower delivery explain the worst one?
-    - Who are my top 10 customers by revenue, and how long has each been active?
-    - Is there a category that sells well in one region but not the others?
-    - Does paying by COD correlate with lower ratings or slower delivery?
-    - How much revenue sits in orders dated in the future, and should I exclude them?

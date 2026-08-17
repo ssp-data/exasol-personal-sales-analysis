@@ -1,11 +1,13 @@
 # Sales analytics on Exasol Personal
 
-A CSV that was lying on disk, turned into queryable data marts you can ask
-questions about in plain English. No BI tool, no cloud account, no license key.
+A CSV that was lying on disk, turned into a star schema and queryable data marts
+you can ask questions about in plain English. No BI tool, no cloud account, no
+license key.
 
 ```bash
-make all     # ~10 seconds, from nothing to six data marts
-make ask     # example questions and the mart catalogue
+make all      # ~10 seconds, from nothing to a star schema and seven marts
+make ask      # example questions and the mart catalogue
+make profile  # what the engine actually did with your query
 ```
 
 Then open your agent of choice — Claude Code, Codex, Cursor — with the `exasol`
@@ -22,19 +24,24 @@ Beauty          $765,861   discount given: $167,499     723 orders   AOV $1,059.
 
 ## What this is
 
-A minimal [declarative data stack](https://www.ssp.sh/blog/rise-of-declarative-data-stack/).
-One config file describes the whole thing; an engine compiles it; Exasol runs it.
+A minimal [declarative data stack](https://www.ssp.sh/blog/rise-of-declarative-data-stack/):
+metrics and marts are declared once in `stack.yaml` and compiled into dbt models.
 
 ```
-stack.yaml  ──►  engine/render.py  ──►  generated SQL + dbt models  ──►  Exasol  ──►  MCP  ──►  you
-  config            the engine            declarative code             runtime      interface
+stack.yaml  ──►  engine/render.py  ──►  dbt models  ──►  Exasol  ──►  MCP  ──►  you
+ metrics +          the engine          marts, joined      runtime    interface
+ marts                                  against the star
 ```
 
-`stack.yaml` is the only file with business logic in it. Sources, metric
-definitions, mart grains, and the questions worth asking all live there. If a
-number looks wrong, you fix the config and re-render — you never edit generated
-SQL. That discipline is borrowed from data warehouse automation tools, and it is
-what makes the stack reproducible instead of merely automated.
+Only the marts are generated, and deliberately so. Marts are the thing that
+repeats — a grain plus a list of metrics — so a compiler earns its keep there
+and nowhere else. The raw DDL, the staging view and the star schema are ordinary
+hand-written SQL, because generating a file you write once costs more than it
+saves. The engine is 141 lines.
+
+If a number looks wrong you fix `stack.yaml` and re-render; you never edit a
+generated model. That discipline is borrowed from data warehouse automation, and
+it is what makes the stack reproducible rather than merely automated.
 
 ## Requirements
 
@@ -42,56 +49,101 @@ what makes the stack reproducible instead of merely automated.
   running locally (`exakit status` should say the database is up)
 - [`uv`](https://docs.astral.sh/uv/)
 
-That's it. `make all` handles the Python environment itself.
+`make all` handles the Python environment itself.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `stack.yaml` | **The config.** Source, staging, metrics, marts, questions. |
-| `engine/render.py` | **The engine.** Compiles the config into everything below. |
-| `build/*.sql` | Generated: raw DDL, grants, verification checks. |
-| `transform/` | Generated: a dbt-exasol project — staging view + six mart tables. |
-| `serve/questions.md` | Generated: the mart catalogue, the metric definitions, and example questions. |
+| `stack.yaml` | **The config.** The star, the metrics, the marts. |
+| `engine/render.py` | **The engine.** Turns a grain + metrics into a dbt model that joins the star. |
+| `sql/*.sql` | Hand-written: raw DDL, grants, verification, profiling. |
+| `transform/models/staging/` | Hand-written: one typed view over the raw table. |
+| `transform/models/core/` | Hand-written: `fct_orders` + three dimensions. |
+| `transform/models/marts/` | **Generated** from `stack.yaml`. |
+| `transform/models/ops/` | Hand-written: query log over `EXA_STATISTICS`. |
+| `serve/questions.md` | The mart catalogue and questions worth asking. |
 | `Makefile` | The runner. `make help` lists every step. |
 
 ## The pipeline
 
 | Step | What happens |
 |---|---|
-| `make render` | `stack.yaml` → DDL, dbt models, docs. Nothing touches the database. |
+| `make render` | `stack.yaml` → dbt mart models. Nothing touches the database. |
 | `make load` | Creates `RAW_SALES.SALES_ORDERS`, strips the file's CRLF line endings, bulk-loads 5,000 rows via `exapump`. |
-| `make transform` | `dbt build` — one typed staging view, six mart tables, eight tests. Runs in ~1.5s. |
+| `make transform` | `dbt build` — staging view, star schema, seven marts, a query log, 36 tests. ~2.5s. |
 | `make grants` | `GRANT SELECT` to `mcp_readonly`. The AI reads; it can never write. |
-| `make verify` | Asserts row counts survive staging and that mart revenue still equals staging revenue. |
-| `make ask` | Prints the mart catalogue, the metric definitions, and example questions. |
+| `make verify` | Asserts no rows lost, no orphan keys, mart totals match the fact — then lists the indexes Exasol built for itself. |
+| `make profile` | Turns on session profiling, runs a mart query, prints the execution plan with real timings. |
 
-Asking needs an MCP client with the `exasol` server connected — the starter kit
-installer wires this up, and `claude mcp list` should show
-`exasol: ... ✔ Connected`. The server logs in as `mcp_readonly`, so the agent can
-read every mart and change nothing.
+Everything is idempotent. `make clean && make all` gets you back to the same
+place — the stack is disposable, only the source CSV is precious.
 
-Everything is idempotent. `make clean && make all` gets you back to exactly the
-same place — the stack is disposable, only the source CSV is precious.
+## What this actually shows about Exasol
 
-## Why the metrics live in the config
+Three things you can see happening, not just read about:
 
-`make transform` pushes every metric definition into the Exasol catalog as a
-column comment, so the MCP server hands them to the AI along with the schema:
+**1. It tunes itself.** There is no `CREATE INDEX` anywhere in this project.
+After `make all`, `make verify` prints:
 
 ```
-AVG_ORDER_VALUE   Net revenue per order (ROUND(SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0), 2))
-DISCOUNT_AMOUNT   Total discount given (SUM(discount_amount))
+INDEX_SCHEMA  INDEX_TABLE   INDEX_TYPE  BYTES
+SALES         DIM_CATEGORY  GLOBAL       2267
+SALES         DIM_CUSTOMER  GLOBAL       5096
+SALES         DIM_REGION    GLOBAL       2267
+SALES         FCT_ORDERS    LOCAL        5185
+...
+```
+
+Seven indexes the optimizer decided it wanted while running the joins, created
+during query execution, and dropped again after five unused weeks. No hints, no
+`ANALYZE`, no statistics to maintain.
+
+**2. You can see inside a query.** `make profile` turns on session profiling and
+reads `EXA_STATISTICS`:
+
+```
+PART_ID  PART_NAME          OBJECT_NAME   OBJECT_ROWS  OUT_ROWS  SECONDS
+2        SCAN               DIM_CATEGORY            4         4    0.000
+3        JOIN               FCT_ORDERS           5000      5000    0.000
+4        JOIN               DIM_REGION              4      5000    0.000
+5        GROUP BY           tmp_subselect0          0        16    0.002
+6        SORT               tmp_subselect0         16        16    0.002
+```
+
+Nothing to install — the `exasqllog` service writes those statistics
+continuously, whether you look at them or not. `SALES.MART_QUERY_LOG` exposes the
+same source to the AI, so "what was slow yesterday?" is the same kind of question
+as "which category sold best?".
+
+**3. The semantic layer lives in the database.** `dbt build` runs with
+`persist_docs`, which pushes every metric definition from `stack.yaml` into the
+Exasol catalog as a column comment. The MCP server hands them to the agent along
+with the schema:
+
+```
+AVG_ORDER_VALUE   Net revenue per order (ROUND(SUM(f.net_revenue) / NULLIF(COUNT(DISTINCT f.order_id), 0), 2))
+DISCOUNT_AMOUNT   Total discount given (SUM(f.discount_amount))
 ```
 
 The model does not have to guess what "revenue" means, and it cannot quietly
-invent a second definition — the number and its definition ship together. That
-is the whole reason to keep a semantic layer in config rather than in a
-dashboard.
+invent a second definition. The number and its definition ship together.
+
+`fct_orders` also carries `distribute_by='customer_key'`. It does nothing here —
+single node, and every dimension is far below the 100,000-row
+`REPLICATION_BORDER`, so Exasol replicates them and joins locally anyway. It is
+in the model because it is the same DDL you would ship to a cluster: scaling out
+changes no SQL.
+
+Money is `DECIMAL`, never `DOUBLE` — including derived metrics like
+`avg_order_value`, which needs an explicit `CAST` because division promotes to
+`DOUBLE`. Exasol's
+[performance best practices](https://docs.exasol.com/db/latest/performance/best_practices.htm)
+are worth reading before you write the metric layer, not after.
 
 ## Changing it
 
-Add a mart by adding six lines to `stack.yaml`:
+Add a mart with five lines in `stack.yaml`:
 
 ```yaml
   - name: mart_rating_by_category
@@ -101,14 +153,15 @@ Add a mart by adding six lines to `stack.yaml`:
     order_by: "avg_rating ASC"
 ```
 
-Then `make render transform`. New model, new table, new documented metrics,
-visible to the AI on the next question.
+`make render transform`. The engine works out that `product_category` needs a
+join to `dim_category`, writes the model, documents every column with the
+metric's own SQL, and the agent can answer questions about it on the next turn.
 
 ## Scaling up
 
-Nothing here is local-only. The same `stack.yaml`, the same dbt project, and the
-same SQL run against a cloud deployment — you change the DSN in
-`transform/profiles.yml` and point `exapump` at a different profile:
+Nothing here is local-only. The same `stack.yaml`, the same dbt project, the same
+SQL run against a cloud deployment — change the DSN in `transform/profiles.yml`
+and point `exapump` at a different profile:
 
 ```bash
 exasol install aws        # or azure, exoscale, stackit
@@ -123,4 +176,4 @@ because it is a toy.
 [E-Commerce Sales Performance Analysis](https://www.kaggle.com/datasets/srisyra02/e-commerce-sales-performance-analysis)
 — 5,000 orders, 12 columns. It is synthetic: order dates run to 2035, which the
 staging view flags as `is_future_order` rather than silently hiding. Ask the AI
-about it; that is question 7.
+about it; that is question 8.

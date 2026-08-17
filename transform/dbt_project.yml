@@ -10,10 +10,16 @@ clean-targets: ["target", "dbt_packages"]
 
 models:
   sales_analytics:
+    # Push descriptions into the Exasol catalog as COMMENTs, so the MCP server
+    # hands the metric definitions to the agent along with the schema.
     +persist_docs:
       relation: true
       columns: true
     staging:
       +materialized: view
+    core:
+      +materialized: table
     marts:
       +materialized: table
+    ops:
+      +materialized: view
