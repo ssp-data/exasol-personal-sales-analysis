@@ -1,0 +1,17 @@
+# Connection only — no business logic. The Makefile exports the variables.
+# Swap `dev` for a cloud deployment by changing the DSN; nothing else moves.
+sales_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: exasol
+      threads: 4
+      dsn: "{{ env_var('EXASOL_DSN', '127.0.0.1:8563') }}"
+      user: "{{ env_var('EXASOL_USER', 'sys') }}"
+      password: "{{ env_var('EXASOL_PASSWORD') }}"
+      dbname: "{{ env_var('EXASOL_DBNAME', 'DB') }}"
+      schema: "{{ env_var('EXASOL_SCHEMA', 'SALES') }}"
+      encryption: true
+      # The starter kit's local container uses a self-signed certificate.
+      validate_server_certificate: false
+      timestamp_format: "YYYY-MM-DDTHH:MI:SS.FF6"

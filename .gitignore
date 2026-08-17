@@ -1,0 +1,20 @@
+# Build artefacts and the normalised copy of the source file.
+build/
+
+# Tooling
+.venv/
+transform/target/
+transform/logs/
+transform/dbt_packages/
+__pycache__/
+*.pyc
+.user.yml
+.mypy_cache/
+.ruff_cache/
+
+.claude
+
+# Note: transform/models/** and serve/questions.md ARE committed even though the
+# engine generates them. They are the "declarative code" artefact — reviewable in
+# a pull request, diffable when stack.yaml changes. Never edit them by hand;
+# `make render` overwrites them.
